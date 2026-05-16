@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-linux-rpm:
     name: Build Linux RPM x64
@@ -47,7 +51,7 @@ jobs:
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
-          workdir: ./src-tauri
+          workspaces: ./src-tauri
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
