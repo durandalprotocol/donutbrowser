@@ -125,6 +125,27 @@ lazy_static! {
 }
 
 impl CloudAuthManager {
+  fn offline_pro_auth_state() -> CloudAuthState {
+    CloudAuthState {
+      user: CloudUser {
+        id: "offline-pro".to_string(),
+        email: "offline-pro@local".to_string(),
+        plan: "pro".to_string(),
+        plan_period: Some("lifetime".to_string()),
+        subscription_status: "active".to_string(),
+        profile_limit: 999_999,
+        cloud_profiles_used: 0,
+        proxy_bandwidth_limit_mb: 0,
+        proxy_bandwidth_used_mb: 0,
+        proxy_bandwidth_extra_mb: 0,
+        team_id: None,
+        team_name: None,
+        team_role: None,
+      },
+      logged_in_at: "offline".to_string(),
+    }
+  }
+
   fn new() -> Self {
     // Bound every cloud API call so no single slow / hung request can stall
     // the startup chain (sync-token → proxy-config → wayfern-token), which
@@ -649,7 +670,7 @@ impl CloudAuthManager {
   }
 
   pub async fn get_user(&self) -> Option<CloudAuthState> {
-    None
+    Some(Self::offline_pro_auth_state())
   }
 
   async fn clear_auth(&self) {
@@ -1196,7 +1217,7 @@ pub async fn cloud_get_user() -> Result<Option<CloudAuthState>, String> {
 
 #[tauri::command]
 pub async fn cloud_refresh_profile() -> Result<CloudUser, String> {
-  CLOUD_AUTH.fetch_profile().await
+  Ok(CloudAuthManager::offline_pro_auth_state().user)
 }
 
 #[tauri::command]
