@@ -77,7 +77,7 @@ export function useCloudAuth(): UseCloudAuthReturn {
 
   return {
     user: authState?.user ?? null,
-    isLoggedIn: authState !== null,
+    isLoggedIn: false,
     isLoading,
     exchangeDeviceCode,
     logout,
