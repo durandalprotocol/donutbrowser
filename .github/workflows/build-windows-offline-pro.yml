@@ -1,0 +1,96 @@
+name: Build Windows Offline Pro
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - offline-pro-windows
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    name: Build Windows x64
+    runs-on: windows-latest
+    env:
+      BUILD_TAG: v0.24.2-offline-pro
+      STABLE_RELEASE: "true"
+      NEXT_PUBLIC_TURNSTILE: ""
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          targets: x86_64-pc-windows-msvc
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workdir: ./src-tauri
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build frontend
+        run: pnpm exec next build
+
+      - name: Build sidecar binaries
+        working-directory: ./src-tauri
+        run: |
+          cargo build --bin donut-proxy --target x86_64-pc-windows-msvc --release
+          cargo build --bin donut-daemon --target x86_64-pc-windows-msvc --release
+
+      - name: Copy sidecar binaries
+        shell: bash
+        run: |
+          mkdir -p src-tauri/binaries
+          cp src-tauri/target/x86_64-pc-windows-msvc/release/donut-proxy.exe src-tauri/binaries/donut-proxy-x86_64-pc-windows-msvc.exe
+          cp src-tauri/target/x86_64-pc-windows-msvc/release/donut-daemon.exe src-tauri/binaries/donut-daemon-x86_64-pc-windows-msvc.exe
+
+      - name: Disable Tauri beforeBuildCommand
+        run: |
+          node -e "const fs=require('fs'); const p='src-tauri/tauri.conf.json'; const c=JSON.parse(fs.readFileSync(p,'utf8')); c.build.beforeBuildCommand=''; fs.writeFileSync(p, JSON.stringify(c, null, 2));"
+
+      - name: Build Tauri app
+        run: pnpm exec tauri build --target x86_64-pc-windows-msvc --verbose
+
+      - name: Create portable zip
+        shell: bash
+        run: |
+          PORTABLE_DIR="Donut-Offline-Pro-Portable"
+          mkdir -p "$PORTABLE_DIR"
+          cp "src-tauri/target/x86_64-pc-windows-msvc/release/donutbrowser.exe" "$PORTABLE_DIR/Donut.exe"
+          cp "src-tauri/target/x86_64-pc-windows-msvc/release/donut-proxy.exe" "$PORTABLE_DIR/"
+          cp "src-tauri/target/x86_64-pc-windows-msvc/release/donut-daemon.exe" "$PORTABLE_DIR/"
+          if [ -f "src-tauri/target/x86_64-pc-windows-msvc/release/WebView2Loader.dll" ]; then
+            cp "src-tauri/target/x86_64-pc-windows-msvc/release/WebView2Loader.dll" "$PORTABLE_DIR/"
+          fi
+          touch "$PORTABLE_DIR/.portable"
+          7z a "Donut_0.24.2_offline-pro_x64-portable.zip" "$PORTABLE_DIR"
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: donut-offline-pro-windows-x64
+          if-no-files-found: error
+          path: |
+            Donut_0.24.2_offline-pro_x64-portable.zip
+            src-tauri/target/x86_64-pc-windows-msvc/release/donutbrowser.exe
+            src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+            src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi

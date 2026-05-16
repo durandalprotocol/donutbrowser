@@ -126,7 +126,6 @@ lazy_static! {
 
 impl CloudAuthManager {
   fn new() -> Self {
-    let state = Self::load_auth_state_from_disk();
     // Bound every cloud API call so no single slow / hung request can stall
     // the startup chain (sync-token → proxy-config → wayfern-token), which
     // otherwise gates Wayfern launch behind whichever endpoint is slowest.
@@ -137,7 +136,7 @@ impl CloudAuthManager {
       .unwrap_or_else(|_| Client::new());
     Self {
       client,
-      state: Mutex::new(state),
+      state: Mutex::new(None),
       refresh_lock: tokio::sync::Mutex::new(()),
       wayfern_token: Mutex::new(None),
     }
@@ -375,6 +374,9 @@ impl CloudAuthManager {
   // --- API methods ---
 
   pub async fn exchange_device_code(&self, code: &str) -> Result<CloudAuthState, String> {
+    let _ = code;
+    return Err("Cloud login is disabled in this build".to_string());
+
     let challenge_url = format!("{CLOUD_API_URL}/api/auth/device-code/challenge");
     let challenge_response = self
       .client
@@ -520,6 +522,10 @@ impl CloudAuthManager {
   }
 
   pub async fn fetch_profile(&self) -> Result<CloudUser, String> {
+    Err("Cloud login is disabled in this build".to_string())
+  }
+
+  pub async fn fetch_profile_cloud(&self) -> Result<CloudUser, String> {
     let user = self
       .api_call_with_retry(|access_token| {
         let url = format!("{CLOUD_API_URL}/api/auth/me");
@@ -557,6 +563,8 @@ impl CloudAuthManager {
   }
 
   pub async fn get_or_refresh_sync_token(&self) -> Result<Option<String>, String> {
+    return Ok(None);
+
     if !self.is_logged_in().await {
       return Ok(None);
     }
@@ -608,23 +616,6 @@ impl CloudAuthManager {
     // Disconnect profile lock manager
     crate::team_lock::PROFILE_LOCK.disconnect().await;
 
-    // Try to call the logout API (best-effort)
-    if let Ok(Some(access_token)) = Self::load_access_token() {
-      let refresh_token = Self::load_refresh_token().ok().flatten();
-      let url = format!("{CLOUD_API_URL}/api/auth/logout");
-      let mut body = serde_json::json!({});
-      if let Some(rt) = &refresh_token {
-        body = serde_json::json!({ "refreshToken": rt });
-      }
-      let _ = self
-        .client
-        .post(&url)
-        .header("Authorization", format!("Bearer {access_token}"))
-        .json(&body)
-        .send()
-        .await;
-    }
-
     // Remove cloud proxy on logout
     PROXY_MANAGER.remove_cloud_proxy();
 
@@ -633,44 +624,21 @@ impl CloudAuthManager {
   }
 
   pub async fn is_logged_in(&self) -> bool {
-    let state = self.state.lock().await;
-    state.is_some()
+    false
   }
 
   pub async fn has_active_paid_subscription(&self) -> bool {
-    let state = self.state.lock().await;
-    match &*state {
-      Some(auth) => {
-        auth.user.plan != "free"
-          && (auth.user.subscription_status == "active"
-            || auth.user.plan_period.as_deref() == Some("lifetime"))
-      }
-      None => false,
-    }
+    true
   }
 
   /// Non-async version that uses try_lock, defaults to false if lock can't be acquired.
   pub fn has_active_paid_subscription_sync(&self) -> bool {
-    match self.state.try_lock() {
-      Ok(state) => match &*state {
-        Some(auth) => {
-          auth.user.plan != "free"
-            && (auth.user.subscription_status == "active"
-              || auth.user.plan_period.as_deref() == Some("lifetime"))
-        }
-        None => false,
-      },
-      Err(_) => false,
-    }
+    true
   }
 
   pub async fn is_fingerprint_os_allowed(&self, fingerprint_os: Option<&str>) -> bool {
-    let host_os = crate::profile::types::get_host_os();
-    match fingerprint_os {
-      None => true,
-      Some(os) if os == host_os => true,
-      Some(_) => self.has_active_paid_subscription().await,
-    }
+    let _ = fingerprint_os;
+    true
   }
 
   pub async fn is_on_team_plan(&self) -> bool {
@@ -681,8 +649,7 @@ impl CloudAuthManager {
   }
 
   pub async fn get_user(&self) -> Option<CloudAuthState> {
-    let state = self.state.lock().await;
-    state.clone()
+    None
   }
 
   async fn clear_auth(&self) {
@@ -777,6 +744,9 @@ impl CloudAuthManager {
 
   /// Sync the cloud-managed proxy: fetch config and upsert or remove
   pub async fn sync_cloud_proxy(&self) {
+    PROXY_MANAGER.remove_cloud_proxy();
+    return;
+
     log::info!("Syncing cloud proxy configuration...");
     match self.fetch_proxy_config().await {
       Ok(Some(config)) => {
@@ -814,6 +784,9 @@ impl CloudAuthManager {
 
   /// Report the number of sync-enabled profiles to the cloud backend
   pub async fn report_sync_profile_count(&self, count: i64) -> Result<(), String> {
+    let _ = count;
+    return Ok(());
+
     self
       .api_call_with_retry(|access_token| {
         let url = format!("{CLOUD_API_URL}/api/auth/sync-profile-usage");
@@ -990,6 +963,9 @@ impl CloudAuthManager {
 
   /// Request a wayfern token from the cloud API. Only succeeds for paid users.
   pub async fn request_wayfern_token(&self) -> Result<(), String> {
+    self.clear_wayfern_token().await;
+    return Ok(());
+
     if !self.has_active_paid_subscription().await {
       self.clear_wayfern_token().await;
       return Ok(());
@@ -1051,6 +1027,9 @@ impl CloudAuthManager {
 
   /// Background loop that refreshes the sync token periodically
   pub async fn start_sync_token_refresh_loop(app_handle: tauri::AppHandle) {
+    let _ = app_handle;
+    return;
+
     let mut wayfern_refresh_counter: u32 = 0;
     loop {
       tokio::time::sleep(std::time::Duration::from_secs(600)).await; // 10 minutes
@@ -1163,6 +1142,15 @@ pub async fn cloud_exchange_device_code(
   app_handle: tauri::AppHandle,
   code: String,
 ) -> Result<CloudAuthState, String> {
+  let _ = app_handle;
+  let _ = code;
+  Err("Cloud login is disabled in this build".to_string())
+}
+
+pub async fn cloud_exchange_device_code_cloud(
+  app_handle: tauri::AppHandle,
+  code: String,
+) -> Result<CloudAuthState, String> {
   let state = CLOUD_AUTH.exchange_device_code(&code).await?;
 
   let has_subscription = CLOUD_AUTH.has_active_paid_subscription().await;
@@ -1213,17 +1201,8 @@ pub async fn cloud_refresh_profile() -> Result<CloudUser, String> {
 
 #[tauri::command]
 pub async fn cloud_logout(app_handle: tauri::AppHandle) -> Result<(), String> {
+  let _ = app_handle;
   CLOUD_AUTH.logout().await?;
-
-  // Always clear the stored sync URL and token on cloud logout. While the
-  // user was signed in, the cloud auth flow populated these with the hosted
-  // sync server's URL + a server-issued token — leaving them in place would
-  // pre-fill the Self-Hosted tab with our production URL and a token the
-  // user never typed. The cloud-URL-only check we used to do here missed
-  // trailing-slash / scheme variants and any future cloud endpoint moves.
-  let manager = crate::settings_manager::SettingsManager::instance();
-  let _ = manager.save_sync_server_url(None);
-  let _ = manager.remove_sync_token(&app_handle).await;
 
   // Remove cloud-managed and cloud-derived proxies
   crate::proxy_manager::PROXY_MANAGER.remove_cloud_proxies();
@@ -1244,18 +1223,19 @@ pub async fn cloud_get_wayfern_token() -> Result<Option<String>, String> {
 
 #[tauri::command]
 pub async fn cloud_refresh_wayfern_token() -> Result<Option<String>, String> {
-  CLOUD_AUTH.request_wayfern_token().await?;
-  Ok(CLOUD_AUTH.get_wayfern_token().await)
+  CLOUD_AUTH.clear_wayfern_token().await;
+  Ok(None)
 }
 
 #[tauri::command]
 pub async fn cloud_get_countries() -> Result<Vec<LocationItem>, String> {
-  CLOUD_AUTH.fetch_countries().await
+  Ok(Vec::new())
 }
 
 #[tauri::command]
 pub async fn cloud_get_regions(country: String) -> Result<Vec<LocationItem>, String> {
-  CLOUD_AUTH.fetch_regions(&country).await
+  let _ = country;
+  Ok(Vec::new())
 }
 
 #[tauri::command]
@@ -1263,7 +1243,9 @@ pub async fn cloud_get_cities(
   country: String,
   region: Option<String>,
 ) -> Result<Vec<LocationItem>, String> {
-  CLOUD_AUTH.fetch_cities(&country, region.as_deref()).await
+  let _ = country;
+  let _ = region;
+  Ok(Vec::new())
 }
 
 #[tauri::command]
@@ -1272,9 +1254,10 @@ pub async fn cloud_get_isps(
   region: Option<String>,
   city: Option<String>,
 ) -> Result<Vec<LocationItem>, String> {
-  CLOUD_AUTH
-    .fetch_isps(&country, region.as_deref(), city.as_deref())
-    .await
+  let _ = country;
+  let _ = region;
+  let _ = city;
+  Ok(Vec::new())
 }
 
 #[tauri::command]
@@ -1285,11 +1268,12 @@ pub async fn create_cloud_location_proxy(
   city: Option<String>,
   isp: Option<String>,
 ) -> Result<crate::proxy_manager::StoredProxy, String> {
-  // If no cloud proxy exists yet, attempt to sync it first
-  if !PROXY_MANAGER.has_cloud_proxy() {
-    CLOUD_AUTH.sync_cloud_proxy().await;
-  }
-  PROXY_MANAGER.create_cloud_location_proxy(name, country, region, city, isp)
+  let _ = name;
+  let _ = country;
+  let _ = region;
+  let _ = city;
+  let _ = isp;
+  Err("Cloud proxy is disabled in this build".to_string())
 }
 
 #[derive(Debug, Serialize)]
@@ -1317,6 +1301,10 @@ struct ProxyUsageResponse {
 
 #[tauri::command]
 pub async fn cloud_get_proxy_usage() -> Result<Option<CloudProxyUsage>, String> {
+  Ok(None)
+}
+
+pub async fn cloud_get_proxy_usage_cloud() -> Result<Option<CloudProxyUsage>, String> {
   let (has_proxy, cached_recurring, cached_extra) = {
     let state = CLOUD_AUTH.state.lock().await;
     match &*state {

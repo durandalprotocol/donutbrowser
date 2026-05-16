@@ -636,7 +636,7 @@ impl WayfernManager {
     let mut wayfern_token = crate::cloud_auth::CLOUD_AUTH.get_wayfern_token().await;
     if wayfern_token.is_none()
       && crate::cloud_auth::CLOUD_AUTH
-        .has_active_paid_subscription()
+        .is_logged_in()
         .await
     {
       // Brief wait for the background token fetch — when the API is healthy

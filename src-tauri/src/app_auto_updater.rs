@@ -158,6 +158,10 @@ impl AppAutoUpdater {
   pub async fn check_for_updates(
     &self,
   ) -> Result<Option<AppUpdateInfo>, Box<dyn std::error::Error + Send + Sync>> {
+    let _ = self;
+    log::info!("App auto-updates disabled in this build");
+    return Ok(None);
+
     let current_version = Self::get_current_version();
     let is_nightly = Self::is_nightly_build();
 
@@ -1724,6 +1728,9 @@ rm "{}"
 
 #[tauri::command]
 pub async fn check_for_app_updates() -> Result<Option<AppUpdateInfo>, String> {
+  log::info!("App auto-updates disabled in this build");
+  return Ok(None);
+
   if crate::app_dirs::is_portable() {
     log::info!("App auto-updates disabled in portable mode");
     return Ok(None);
@@ -1769,6 +1776,9 @@ pub async fn restart_application() -> Result<(), String> {
 #[tauri::command]
 pub async fn check_for_app_updates_manual() -> Result<Option<AppUpdateInfo>, String> {
   log::info!("Manual app update check triggered");
+  log::info!("App auto-updates disabled in this build");
+  return Ok(None);
+
   let updater = AppAutoUpdater::instance();
   updater
     .check_for_updates()

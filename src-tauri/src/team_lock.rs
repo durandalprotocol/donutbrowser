@@ -278,6 +278,9 @@ impl ProfileLockManager {
 pub async fn acquire_team_lock_if_needed(
   profile: &crate::profile::BrowserProfile,
 ) -> Result<(), String> {
+  let _ = profile;
+  return Ok(());
+
   if !profile.is_sync_enabled() {
     return Ok(());
   }
@@ -305,6 +308,9 @@ pub async fn acquire_team_lock_if_needed(
 
 /// Release profile lock if profile is sync-enabled and user has a paid subscription.
 pub async fn release_team_lock_if_needed(profile: &crate::profile::BrowserProfile) {
+  let _ = profile;
+  return;
+
   if !profile.is_sync_enabled() {
     return;
   }
